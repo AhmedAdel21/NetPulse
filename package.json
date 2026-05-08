@@ -21,7 +21,10 @@
 		"@typescript-eslint/parser": "^8.59.2",
 		"babel-loader": "^10.1.1",
 		"copy-webpack-plugin": "^14.0.0",
+		"cross-env": "^10.1.0",
 		"css-loader": "^7.1.4",
+		"css-minimizer-webpack-plugin": "^8.0.0",
+		"dotenv": "^17.4.2",
 		"eslint": "^9.39.4",
 		"eslint-config-prettier": "^10.1.8",
 		"eslint-import-resolver-typescript": "^4.4.4",
@@ -37,6 +40,7 @@
 		"prettier": "^3.8.3",
 		"react-refresh": "^0.18.0",
 		"style-loader": "^4.0.0",
+		"terser-webpack-plugin": "^5.5.0",
 		"typescript": "^6.0.3",
 		"typescript-eslint": "^8.59.2",
 		"webpack": "^5.106.2",
@@ -46,9 +50,9 @@
 		"webpack-merge": "^6.0.1"
 	},
 	"scripts": {
-		"dev": "webpack serve --config webpack/webpack.dev.js",
-		"build": "webpack --config webpack/webpack.prod.js",
-		"build:analyze": "ANALYZE=true webpack --config webpack/webpack.prod.js",
+		"dev": "cross-env BABEL_ENV=development NODE_ENV=development webpack serve --config webpack/webpack.dev.js",
+		"build": "cross-env BABEL_ENV=production NODE_ENV=production webpack --config webpack/webpack.prod.js",
+		"build:analyze": "cross-env BABEL_ENV=production NODE_ENV=production ANALYZE=true webpack --config webpack/webpack.prod.js",
 		"type-check": "tsc --noEmit",
 		"lint": "eslint \"src/**/*.{ts,tsx}\"",
 		"lint:fix": "eslint \"src/**/*.{ts,tsx}\" --fix",
@@ -65,5 +69,17 @@
 			"prettier --write"
 		]
 	},
-	"type": "module"
+	"type": "module",
+	"browserslist": {
+		"production": [
+			">0.2%",
+			"not dead",
+			"not op_mini all"
+		],
+		"development": [
+			"last 1 chrome version",
+			"last 1 firefox version",
+			"last 1 safari version"
+		]
+	}
 }

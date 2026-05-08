@@ -35,4 +35,13 @@ export default merge(common, {
             overlay: { errors: true, warnings: false },
         },
     },
+
+    module: {
+        rules: [
+            {
+                test: /\.css$/i,
+                use: ['style-loader', 'css-loader'],
+            },
+        ],
+    },
 });

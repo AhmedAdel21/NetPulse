@@ -64,8 +64,8 @@ This document captures the architectural and tooling decisions made for NetPulse
 **Why each non-default flag earns its place:**
 
 - `**noUncheckedIndexedAccess`** — `arr[0]` becomes `T | undefined`. Forces nullish handling on indexed access, which is where real bugs hide. Annoying at first, prevents production crashes.
-- `**exactOptionalPropertyTypes**` — distinguishes `{ name?: string }` (property may be missing) from `{ name: string | undefined }` (property is present, value may be undefined). Most codebases conflate these and ship subtle bugs.
-- `**noPropertyAccessFromIndexSignature**` — forces `obj["key"]` for indexed access on `Record<string, T>`, preventing accidental treating of dynamic objects as typed ones.
+- `**exactOptionalPropertyTypes`** — distinguishes `{ name?: string }` (property may be missing) from `{ name: string | undefined }` (property is present, value may be undefined). Most codebases conflate these and ship subtle bugs.
+- `**noPropertyAccessFromIndexSignature`** — forces `obj["key"]` for indexed access on `Record<string, T>`, preventing accidental treating of dynamic objects as typed ones.
 - `**noImplicitOverride**` — class methods overriding a parent must use the `override` keyword. Prevents accidental shadowing.
 
 **Revisit when:** never. Stricter is better; junior contributors learn faster on strict configs than on loose ones.
@@ -74,7 +74,7 @@ This document captures the architectural and tooling decisions made for NetPulse
 
 ## 5. Module resolution: dropped `baseUrl`, kept `paths` with relative targets
 
-**Chosen:** No `baseUrl` in `tsconfig.json`. Path aliases (`@app/`*, `@features/*`, `@shared/*`, `@pages/*`) declared in `paths` with explicit `./src/...` relative targets.
+**Chosen:** No `baseUrl` in `tsconfig.json`. Path aliases (`@app/`*, `@features/`*, `@shared/*`, `@pages/*`) declared in `paths` with explicit `./src/...` relative targets.
 
 **Rejected:** Legacy `baseUrl: "."` + non-relative path targets.
 
@@ -147,7 +147,7 @@ This document captures the architectural and tooling decisions made for NetPulse
 
 **Why:**
 
-- `eslint-plugin-import` is resolver-agnostic by design. We have to install the TS resolver ourselves to make `import/`* rules understand `@app/*`, `@features/*`, etc.
+- `eslint-plugin-import` is resolver-agnostic by design. We have to install the TS resolver ourselves to make `import/`* rules understand `@app/`*, `@features/`*, etc.
 - Without it, `import/no-cycle`, `import/no-self-import`, and ordering rules can't analyze our import graph.
 - Standard convention; required by every TS project that uses `import/*` rules.
 
@@ -264,8 +264,123 @@ This document captures the architectural and tooling decisions made for NetPulse
 
 ---
 
+## 17. Production source maps: `source-map` (separate files)
+
+**Chosen:** `devtool: 'source-map'` in production — full-fidelity source maps as `.map` files.
+
+**Why:**
+
+- Production errors must be column-accurate. Stack traces from real user errors need precise location.
+- `.map` files can be uploaded to error reporting services (Sentry, Rollbar) and excluded from public CDN if desired.
+- The build is slower than dev's `eval-cheap-module-source-map`, but build time isn't a hot path in CI.
+
+**Revisit when:** never expected.
+
+---
+
+## 18. Cache strategy: content-hashed assets, fresh HTML
+
+**Chosen:** All static assets use `[contenthash:8]` in their filename. `index.html` is unhashed.
+
+**Why:**
+
+- Hashed asset filenames enable infinite cache lifetimes `Cache-Control: max-age=31536000, immutable`). Browser never re-fetches an asset with the same hash.
+- One-byte change → new hash → new URL → automatic cache bust.
+- `index.html` is always fetched fresh because it's the entry point that resolves the current set of asset URLs.
+- This is the universal pattern for modern static site hosting.
+
+**Revisit when:** never.
+
+---
+
+## 19. Code splitting strategy: vendors + common + runtime
+
+**Chosen:** SplitChunks with `vendors` (node_modules), `common` (modules used 2+ times), and a separate `runtime` chunk.
+
+**Why:**
+
+- Vendors change rarely; isolating them gives long-lived cache hits across deploys.
+- Common chunks deduplicate code shared between routes.
+- Runtime chunk separation prevents the small webpack bootstrap from invalidating the vendor cache when *anything* in your app changes.
+- Defaults from CRA/Next.js do similar things; we make ours explicit and tunable.
+
+**Revisit when:** profiling shows a specific cache or load-time problem the current strategy doesn't address.
+
+---
+
+## 20. CSS pipeline: style-loader (dev) vs MiniCssExtractPlugin (prod)
+
+**Chosen:** Dev uses `style-loader` (CSS injected as `<style>` tags by JS). Prod uses `mini-css-extract-plugin` (real `.css` files referenced by `<link>` tags).
+
+**Why dev = inline:** `style-loader` supports HMR for CSS — edit a CSS file, see the change instantly without reload. `MiniCssExtractPlugin` doesn't support HMR.
+
+**Why prod = extracted:** parallel browser download (CSS doesn't block JS parse), proper caching of CSS separately, no FOUC because CSS applies before JS runs.
+
+**Revisit when:** never.
+
+---
+
+## 21. Build-time configuration via `DefinePlugin` + `dotenv`
+
+**Chosen:** Environment variables are loaded from `.env` via `dotenv`, then injected into source code at build time via Webpack's `DefinePlugin`.
+
+**Why:**
+
+- Browsers have no `process.env`. `DefinePlugin` does build-time string substitution, replacing `process.env.X` with the literal value.
+- Only build-time values are exposed; runtime secrets must come from a backend.
+- `.env.example` is committed (documents required vars). `.env` is gitignored (local values).
+
+**Revisit when:** runtime configuration is needed (e.g., per-tenant config served from an API). At that point, switch to fetching config at app boot.
+
+---
+
+## 22. Browserslist for production-vs-dev targeting
+
+**Chosen:** Two `browserslist` configs in `package.json` — wide modern-browser coverage in prod, evergreen-only in dev.
+
+**Why:**
+
+- Prod build down-levels for real-world browsers `>0.2%, not dead, not op_mini all`).
+- Dev skips most down-leveling `last 1 chrome/firefox/safari`) for faster compile.
+- `@babel/preset-env` reads browserslist automatically when no explicit `targets` is set.
+
+**Revisit when:** analytics show our prod target list is missing real users, or modernizing eliminates a browser we no longer need to support.
+
+---
+
+## 23. Cross-platform env vars in npm scripts: `cross-env`
+
+**Chosen:** `cross-env` for inline env-var assignment in npm scripts.
+
+**Rejected:** Bash-style `VAR=value command` (breaks on Windows cmd/PowerShell), or maintaining separate Windows/Unix scripts.
+
+**Why:**
+- The bash-style syntax is the most natural for setting env vars in scripts but is fundamentally non-portable.
+- `cross-env` works identically on every OS and is essentially the de facto standard for this in the JS ecosystem.
+- Avoids a class of "works on my machine" bugs at near-zero cost.
+
+**Revisit when:** Node ships first-class cross-platform env support in npm scripts (proposed but not landed as of 2026).
+
+---
+
+## 24. Build mode propagation: explicit `BABEL_ENV` + `NODE_ENV` in scripts
+
+**Chosen:** Set both `BABEL_ENV` and `NODE_ENV` explicitly in every npm script (via `cross-env`). Babel's plugin gating uses a whitelist check (`=== 'development'`), not a blacklist (`!== 'production'`).
+
+**Rejected:** Relying on Webpack's `mode` flag to propagate to Babel's process; or blacklist gating on `NODE_ENV`.
+
+**Why:**
+- Babel and Webpack are separate processes that don't share config state. Webpack's `mode: 'production'` does not set Babel's environment.
+- Without explicit env vars, Babel reads `undefined`, which a blacklist check (`!== 'production'`) treats as "development" — so dev-only plugins like `react-refresh/babel` get applied to production builds, crashing the app at runtime with `$RefreshSig$ is not defined`.
+- Whitelist gating is safer: the failure mode is "dev plugin not applied" (works in prod, slightly degraded dev), instead of "dev plugin applied to prod" (production crash).
+
+**Revisit when:** never expected.
+
+---
+
 ## How to use this document
 
 - Append new decisions, don't edit history. If a decision changes, add a new entry that supersedes the old one and link to it.
 - Every non-trivial trade-off gets an entry. "We chose X over Y because Z." Even small ones — they compound into a clear architecture story.
 - Bring this file to interviews. Most candidates can't articulate *why* their stack is what it is. You will.
+
