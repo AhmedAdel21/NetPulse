@@ -355,6 +355,7 @@ This document captures the architectural and tooling decisions made for NetPulse
 **Rejected:** Bash-style `VAR=value command` (breaks on Windows cmd/PowerShell), or maintaining separate Windows/Unix scripts.
 
 **Why:**
+
 - The bash-style syntax is the most natural for setting env vars in scripts but is fundamentally non-portable.
 - `cross-env` works identically on every OS and is essentially the de facto standard for this in the JS ecosystem.
 - Avoids a class of "works on my machine" bugs at near-zero cost.
@@ -370,6 +371,7 @@ This document captures the architectural and tooling decisions made for NetPulse
 **Rejected:** Relying on Webpack's `mode` flag to propagate to Babel's process; or blacklist gating on `NODE_ENV`.
 
 **Why:**
+
 - Babel and Webpack are separate processes that don't share config state. Webpack's `mode: 'production'` does not set Babel's environment.
 - Without explicit env vars, Babel reads `undefined`, which a blacklist check (`!== 'production'`) treats as "development" — so dev-only plugins like `react-refresh/babel` get applied to production builds, crashing the app at runtime with `$RefreshSig$ is not defined`.
 - Whitelist gating is safer: the failure mode is "dev plugin not applied" (works in prod, slightly degraded dev), instead of "dev plugin applied to prod" (production crash).
@@ -378,9 +380,105 @@ This document captures the architectural and tooling decisions made for NetPulse
 
 ---
 
+## 25. Router definition: `createBrowserRouter` (data router API)
+
+**Chosen:** `createBrowserRouter` + `RouterProvider`.
+
+**Rejected:** Legacy `<BrowserRouter>` + `<Routes>` JSX-based config.
+
+**Why:**
+
+- The data router API (v6.4+) is the future of React Router. It supports loaders, actions, deferred data, and proper error boundaries.
+- Configuring routes as a data structure (not JSX) makes them inspectable, testable, and easier to generate from metadata.
+- The legacy `<BrowserRouter>` API still works but is feature-frozen. Tutorials default to it; production codebases are migrating away.
+
+**Revisit when:** never expected.
+
+---
+
+## 26. Route-level code splitting via `React.lazy`
+
+**Chosen:** Every page component imported via `React.lazy(() => import(...))`. Each page becomes its own webpack chunk automatically.
+
+**Rejected:** Eager imports of all pages.
+
+**Why:**
+
+- First page load only fetches the chunks needed for the visible route. Other pages are fetched on demand.
+- Combined with Day 17's `splitChunks` config, this produces a granular chunk graph: vendors + main + per-route chunks.
+- The `.then((m) => ({ default: m.X }))` mapping is needed because we use named exports (Decision #15) and `React.lazy` requires a default export.
+- Each route is wrapped in its own `<Suspense>` so navigation loading states stay scoped to the content area, not the whole layout.
+
+**Revisit when:** never.
+
+---
+
+## 27. Layout-as-parent-route composition
+
+**Chosen:** Layouts (`AppLayout`, `AuthLayout`) are parent routes whose children inherit the layout via `<Outlet />`. Routes are grouped by layout, not flat.
+
+**Rejected:** Per-page `<Layout><Page /></Layout>` wrapping.
+
+**Why:**
+
+- DRY: layout chrome is defined once, not duplicated per page.
+- Idiomatic React Router v6 — the layout-route pattern is the official recommended approach.
+- Switching layouts becomes a one-line change in the router config.
+
+**Revisit when:** never.
+
+---
+
+## 28. Protected route pattern with redirect-back
+
+**Chosen:** `<ProtectedRoute>` wrapper that uses `<Navigate to="/login" state={{ from: location }} replace />`. Login page reads `state.from` and navigates back after authentication.
+
+**Rejected:** Any pattern that loses the original destination.
+
+**Why:**
+
+- Users who bookmark `/incidents/42` and visit it while logged out should land on `/incidents/42` after login, not on a generic `/dashboard`.
+- `replace` ensures the login page doesn't pollute browser history.
+- This is the single most common UX bug in tutorial-quality React apps. Getting it right is a senior signal.
+
+**Revisit when:** never.
+
+---
+
+## 29. Mock auth via `useSyncExternalStore`
+
+**Chosen:** Mock auth state implemented as a module-level value with subscribe/notify, exposed through `useSyncExternalStore`.
+
+**Rejected:** A `useState` + manual event listener pattern.
+
+**Why:**
+
+- `useSyncExternalStore` is React 18's official primitive for subscribing to external stores. It avoids tearing during concurrent renders — `useState` + manual listeners can produce inconsistent UI in concurrent mode.
+- Demonstrates the pattern that Redux and Zustand implement at scale.
+- This entire mock is throwaway — Day 19 replaces it with the real auth store. The abstraction (the `useAuth` shape) survives.
+
+**Revisit when:** the mock is replaced (Day 19)
+
+---
+
+## 30. App composition root: `App.tsx` is one line
+
+**Chosen:** `App.tsx` renders `<AppRouter />` and nothing else. All app composition lives in `AppRouter.tsx`.
+
+**Rejected:** Doing routing logic inside `App.tsx`.
+
+**Why:**
+
+- `App.tsx` is the composition root. Its job is to assemble top-level concerns (router, providers, error boundaries) — not to be a feature.
+- Easier to test: `App.tsx` is trivially renderable; routing logic is in `AppRouter.tsx` which can be tested with a memory router.
+- Easier to extend: adding global providers later (Redux store, theme, error boundary) is a one-line wrap in `App.tsx`, not surgery in a routing file.
+
+**Revisit when:** never.
+
+---
+
 ## How to use this document
 
 - Append new decisions, don't edit history. If a decision changes, add a new entry that supersedes the old one and link to it.
 - Every non-trivial trade-off gets an entry. "We chose X over Y because Z." Even small ones — they compound into a clear architecture story.
 - Bring this file to interviews. Most candidates can't articulate *why* their stack is what it is. You will.
-

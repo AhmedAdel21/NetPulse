@@ -1,0 +1,33 @@
+.auth-layout {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 2rem;
+}
+
+.auth-layout-card {
+  background: #0f1626;
+  border: 1px solid #1f2a3d;
+  border-radius: 12px;
+  padding: 2.5rem 3rem;
+  min-width: 320px;
+  max-width: 400px;
+  text-align: center;
+}
+
+.auth-layout-card h1 {
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+}
+
+.auth-layout-card button {
+  margin-top: 1.5rem;
+  background: #00d9ff;
+  color: #0a0e1a;
+  border: none;
+  padding: 0.65rem 1.5rem;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+}

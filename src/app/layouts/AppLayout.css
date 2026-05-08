@@ -1,0 +1,93 @@
+.app-layout {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  min-height: 100vh;
+}
+
+.app-sidebar {
+  background: #0f1626;
+  border-right: 1px solid #1f2a3d;
+  padding: 1.5rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.app-sidebar-brand {
+  color: #00d9ff;
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.app-sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.app-sidebar-link {
+  display: block;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  color: #9aa5b8;
+  text-decoration: none;
+  font-size: 0.95rem;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.app-sidebar-link:hover {
+  background: #1a2333;
+  color: #e8eaed;
+}
+
+.app-sidebar-link[aria-current='page'] {
+  background: #1f3a5f;
+  color: #00d9ff;
+}
+
+.app-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.app-topbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 0.75rem 1.5rem;
+  border-bottom: 1px solid #1f2a3d;
+  background: #0a0e1a;
+}
+
+.app-topbar-user {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  color: #e8eaed;
+  font-size: 0.9rem;
+}
+
+.app-topbar-user button {
+  background: transparent;
+  border: 1px solid #2a3a52;
+  color: #9aa5b8;
+  padding: 0.4rem 0.85rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.app-topbar-user button:hover {
+  background: #1a2333;
+  color: #e8eaed;
+}
+
+.app-content {
+  flex: 1;
+  padding: 2rem;
+  overflow-y: auto;
+}
