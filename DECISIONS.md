@@ -429,19 +429,19 @@ This document captures the architectural and tooling decisions made for NetPulse
 
 ---
 
-## 28. Protected route pattern with redirect-back
+## 28. Protected & public route redirects (UPDATED — see also Decision #28-rev)
 
-**Chosen:** `<ProtectedRoute>` wrapper that uses `<Navigate to="/login" state={{ from: location }} replace />`. Login page reads `state.from` and navigates back after authentication.
+**Original (#28):** ProtectedRoute passes `state.from`; LoginPage reads it imperatively after login.
 
-**Rejected:** Any pattern that loses the original destination.
+**Revised:** PublicOnlyRoute itself reads `state.from` and redirects there when an authenticated user lands on a public-only route. LoginPage no longer navigates.
 
-**Why:**
+**Why the revision:**
 
-- Users who bookmark `/incidents/42` and visit it while logged out should land on `/incidents/42` after login, not on a generic `/dashboard`.
-- `replace` ensures the login page doesn't pollute browser history.
-- This is the single most common UX bug in tutorial-quality React apps. Getting it right is a senior signal.
+- The original had a same-tick race condition: `login()` flipped auth state, the imperative `navigate(from)` was queued, but PublicOnlyRoute re-rendered first during commit and redirected to `/dashboard` declaratively — superseding the imperative call.
+- The revised pattern eliminates the race by making PublicOnlyRoute the single source of truth for post-login destination. LoginPage becomes a pure auth mutation; routing logic lives in the route guard.
+- General lesson: **declarative routing in render beats imperative routing in event handlers** when both are responding to the same state change. If the state change implies the navigation, render it; don't call it.
 
-**Revisit when:** never.
+**Revisit when:** never expected.
 
 ---
 
@@ -474,6 +474,106 @@ This document captures the architectural and tooling decisions made for NetPulse
 - Easier to extend: adding global providers later (Redux store, theme, error boundary) is a one-line wrap in `App.tsx`, not surgery in a routing file.
 
 **Revisit when:** never.
+
+---
+
+## 31. Token storage: in-memory access + simulated httpOnly refresh
+
+**Chosen:** Access token in memory (module-level variable). Refresh token in localStorage with a comment marking the production swap point to httpOnly cookies.
+
+**Rejected:** Both tokens in localStorage; both in memory; sessionStorage.
+
+**Why:**
+
+- Access tokens in memory are XSS-safe (no script can read them — they're not exposed to any global).
+- Refresh tokens belong in httpOnly Secure SameSite=Strict cookies in production. Client never sees them; server sets them on login, clears on logout, attaches them automatically on /refresh requests.
+- localStorage is used here ONLY because there's no backend to set cookies. The storage module's interface (`setRefreshToken`/`getRefreshToken`) doesn't change when wired to a real backend; only the storage layer does.
+- Trade-off accepted for the mock: refresh token is XSS-readable. In production this is unacceptable; for a local dev demo, the threat model doesn't include XSS in our own bundle.
+
+**Revisit when:** wiring a real backend. The change is local to `tokenStorage.ts`.
+
+---
+
+## 32. HTTP client: fetch-based wrapper, not axios
+
+**Chosen:** Custom fetch wrapper with `skipAuth` opt-out, `HttpError` class, and refresh-on-401 logic.
+
+**Rejected:** axios.
+
+**Why:**
+
+- RTK Query (which we'll add later) uses fetch under the hood — keeping our HTTP layer fetch-aligned makes integration cleaner.
+- ~15KB bundle savings vs axios.
+- Writing the interceptor pattern from scratch teaches the pattern, not an axios feature. Transferable knowledge.
+- `HttpError` subclass enables `instanceof` checks for status-aware error handling.
+
+**Revisit when:** never expected.
+
+---
+
+## 33. Refresh strategy: reactive, single-flight
+
+**Chosen:** Refresh on 401 (reactive). Single-flight: concurrent 401s share one in-flight refresh promise via a module-level promise variable.
+
+**Rejected:** Proactive refresh (decode JWT, schedule a timer ahead of expiry); naive refresh (each 401 triggers its own refresh).
+
+**Why:**
+
+- Reactive is simpler and works for typical access token TTLs.
+- Single-flight is non-negotiable: rotating refresh tokens (the modern security pattern) invalidate the previous refresh token on use. Without single-flight, parallel 401s trigger parallel refreshes; only the first succeeds; the rest see "invalid refresh token" and force a logout.
+- Proactive refresh is a Week 6 polish item if needed — adds timer management complexity for a smoother UX.
+
+**Revisit when:** UX feedback indicates the brief 401 → refresh → retry latency is noticeable.
+
+---
+
+## 34. Auth state in Redux Toolkit, UI state in Zustand
+
+**Chosen:** Redux Toolkit for auth (slice, thunks, selectors). Zustand reserved for ephemeral UI state (Day 20).
+
+**Rejected:** Putting both in Redux; putting both in Zustand; using only Context.
+
+**Why:**
+
+- Auth is shared, persistent, multi-component, side-effectful — Redux's strengths.
+- Redux DevTools time-travel for auth state transitions is a powerful debugging asset.
+- Zustand is unbeatable for ephemeral UI state (modals, sidebars, theme): less ceremony than Redux for state with simple mutation patterns.
+- Having both in the project demonstrates judgment when an interviewer asks "when do you reach for Redux vs Zustand?"
+
+**Revisit when:** never expected.
+
+---
+
+## 35. State machine over booleans for auth status
+
+**Chosen:** `status: 'idle' | 'authenticating' | 'authenticated' | 'error'` as a string union.
+
+**Rejected:** Booleans (`isLoading`, `isAuthenticated`, `hasError`).
+
+**Why:**
+
+- String unions make impossible states unrepresentable. With booleans, `(isLoading && hasError)` is a code path that shouldn't exist but can; with a status field, it can't be both.
+- Single source of truth for "what's happening with auth right now."
+- Simplifies UI logic: `status === 'authenticating'` is a clear branch; `(isLoading && !hasError && !isAuthenticated)` is a guess.
+
+**Revisit when:** never
+
+---
+
+## 36. HTTP layer ↔ Redux decoupling via DOM events
+
+**Chosen:** When refresh fails, the HTTP client dispatches a `CustomEvent('auth:logout')`. A listener mounted in `App.tsx` translates the event into a Redux `authReset` action.
+
+**Rejected:** Importing the Redux store into the HTTP client; passing `dispatch` as a parameter into the HTTP layer.
+
+**Why:**
+
+- The HTTP layer should be agnostic of state management. It exists below feature code in the dependency graph.
+- Importing the store would create a circular dependency: store imports auth feature, auth feature imports HTTP client, HTTP client imports store.
+- Custom events are a standards-based pub/sub channel that any layer can dispatch to or listen for. Loose coupling at near-zero cost.
+- Easy to extend: a third subsystem (analytics, error reporting) can listen for the same event without modifying any existing code.
+
+**Revisit when:** never expected.
 
 ---
 

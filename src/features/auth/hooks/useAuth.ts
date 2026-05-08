@@ -1,57 +1,32 @@
-import { useSyncExternalStore } from 'react';
+import { useCallback } from 'react';
 
-interface AuthState {
-  isAuthenticated: boolean;
-  user: { id: string; name: string } | null;
-}
+import { useAppDispatch, useAppSelector } from '@app/store/hooks';
 
-// Module-level mutable state. Will be replaced with a real store on Day 19.
-let state: AuthState = {
-  isAuthenticated: false,
-  user: null,
-};
+import {
+  selectAuthError,
+  selectAuthStatus,
+  selectAuthUser,
+  selectIsAuthenticated,
+} from '../selectors';
+import { loginThunk, logoutThunk } from '../thunks';
 
-const listeners = new Set<() => void>();
+export const useAuth = () => {
+  const dispatch = useAppDispatch();
+  const user = useAppSelector(selectAuthUser);
+  const status = useAppSelector(selectAuthStatus);
+  const error = useAppSelector(selectAuthError);
+  const isAuthenticated = useAppSelector(selectIsAuthenticated);
 
-const subscribe = (listener: () => void): (() => void) => {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
-};
+  const login = useCallback(
+    async (email: string, password: string) => {
+      await dispatch(loginThunk(email, password));
+    },
+    [dispatch],
+  );
 
-const getSnapshot = (): AuthState => state;
+  const logout = useCallback(async () => {
+    await dispatch(logoutThunk());
+  }, [dispatch]);
 
-const notify = (): void => {
-  listeners.forEach((listener) => {
-    listener();
-  });
-};
-
-const login = (): void => {
-  state = {
-    isAuthenticated: true,
-    user: { id: 'mock-1', name: 'Ahmed' },
-  };
-  notify();
-};
-
-const logout = (): void => {
-  state = { isAuthenticated: false, user: null };
-  notify();
-};
-
-interface UseAuthReturn extends AuthState {
-  login: () => void;
-  logout: () => void;
-}
-
-export const useAuth = (): UseAuthReturn => {
-  const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
-  console.log('snapshot', snapshot);
-  return {
-    ...snapshot,
-    login,
-    logout,
-  };
+  return { user, status, error, isAuthenticated, login, logout };
 };
