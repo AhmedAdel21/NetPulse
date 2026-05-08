@@ -205,9 +205,67 @@ This document captures the architectural and tooling decisions made for NetPulse
 
 ---
 
+## 13. Webpack split: `common` + `dev` + `prod` via `webpack-merge`
+
+**Chosen:** Three webpack config files — `webpack.common.js` (shared), `webpack.dev.js`, `webpack.prod.js` — composed via `webpack-merge`.
+
+**Rejected:** Single `webpack.config.js` with `if (env.production)` branches.
+
+**Why:**
+
+- Composition is clearer than conditionals. You read each file top-to-bottom; you don't trace through `if` branches to see what's active.
+- Each config has a single responsibility — common contains what's truly shared, the others contain only their environment's overrides.
+- `webpack-merge` knows how to deep-merge `module.rules` and `plugins` correctly. Hand-merging is error-prone.
+
+**Revisit when:** never.
+
+---
+
+## 14. Loaders vs plugins (mental model documented)
+
+**Decision:** Document the loader-vs-plugin distinction here so it's permanent reference.
+
+- **Loaders transform individual files.** They take a file's contents in, produce JS modules out. Example: babel-loader transforms TS to JS, css-loader transforms CSS to a JS module that exports the parsed CSS.
+- **Plugins hook into the build lifecycle.** They do whatever doesn't fit "transform one file" — generate HTML, extract CSS to separate files, copy static assets, analyze bundles.
+
+**Why this matters:** when you need a feature, knowing which category it falls into tells you what package to look for. If it's "do something with each file matching a pattern," it's a loader. If it's "do something at a build stage," it's a plugin.
+
+---
+
+## 15. Default exports banned in source code
+
+**Chosen:** Named exports only. Default exports allowed solely for top-level framework entry points where they're required (Webpack config files, route component conventions).
+
+**Rejected:** Default exports as the convention for components.
+
+**Why:**
+
+- Named exports preserve identity through imports (the imported name matches the export name). Default exports lose their name and create rename inconsistency across files.
+- Tree-shaking works better with named exports — bundlers can statically analyze which named exports are used.
+- Refactoring tools (rename symbol, find references) work correctly with named exports. Default exports break them.
+- Catches typos at import-time: `import { Apo } from './App'` is an error; `import Apo from './App'` silently works because the name is local.
+
+**Revisit when:** never.
+
+---
+
+## 16. Source map: `eval-cheap-module-source-map` for dev
+
+**Chosen:** `eval-cheap-module-source-map` in dev. (Prod choice deferred to Day 17.)
+
+**Why:**
+
+- Fast rebuilds (uses `eval()` to wrap modules).
+- Line-accurate (not column-accurate — "cheap") — fine for dev, would be unacceptable for prod errors.
+- Maps to original source ("module") — debugger shows your TS, not the transpiled JS.
+- Industry-standard dev choice.
+
+**Revisit when:** Day 17 when we choose the production source map flavor.
+
+---
+
 ## How to use this document
 
 - Append new decisions, don't edit history. If a decision changes, add a new entry that supersedes the old one and link to it.
 - Every non-trivial trade-off gets an entry. "We chose X over Y because Z." Even small ones — they compound into a clear architecture story.
 - Bring this file to interviews. Most candidates can't articulate *why* their stack is what it is. You will.
-
